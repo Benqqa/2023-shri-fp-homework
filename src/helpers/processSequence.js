@@ -14,38 +14,115 @@
  * Иногда промисы от API будут приходить в состояние rejected, (прямо как и API в реальной жизни)
  * Ответ будет приходить в поле {result}
  */
- import Api from '../tools/api';
+import { allPass, compose, flip, gt, length, lt, partial, prop, tap } from "ramda";
+import Api from "../tools/api";
+function composeAsync() {
+  const fns = Array.prototype.slice.call(arguments, 0);
 
- const api = new Api();
+  return function composed(initial) {
+    return fns.reduceRight((promise, fn) => {
+      return promise.then(fn).catch(() => {
+        console.log("ERRRRRR");
+      });
+    }, Promise.resolve(initial));
+  };
+}
+const api = new Api();
+const getValue = prop("value");
+const getWriteLog = prop("writeLog");
+const getHandleSuccess = prop("handleSuccess");
+const gethHandleError = prop("handleError");
 
- /**
-  * Я – пример, удали меня
-  */
- const wait = time => new Promise(resolve => {
-     setTimeout(resolve, time);
- })
+const getApi = api.get;
 
- const processSequence = ({value, writeLog, handleSuccess, handleError}) => {
-     /**
-      * Я – пример, удали меня
-      */
-     writeLog(value);
+//   validation
+const pattern = /^[0-9.]+$/;
+const ValidationErrorMessage = "ValidationError";
 
-     api.get('https://api.tech/numbers/base', {from: 2, to: 10, number: '01011010101'}).then(({result}) => {
-         writeLog(result);
-     });
+const hasNumberValidCharacters = (string) => pattern.test(string);
+const isValueLess10 = gt(10);
+const isValueMore2 = lt(2);
+const isLengthOfNumberLess10 = compose(isValueLess10, length);
+const isLengthOfNumberMore2 = compose(isValueMore2, length);
+const isPositiveNumber = (string) => Number(string) >= 0;
+const squareNumber = partial(flip(Math.pow), [2]);
+const remainderDivided = (divider, value) => value % divider;
+const remainderDividedByThree = partial(remainderDivided, [3]);
 
-     wait(2500).then(() => {
-         writeLog('SecondLog')
+const isStringValid = allPass([
+  hasNumberValidCharacters,
+  isLengthOfNumberLess10,
+  isLengthOfNumberMore2,
+  isPositiveNumber,
+]);
 
-         return wait(1500);
-     }).then(() => {
-         writeLog('ThirdLog');
+const validationString = (value, handleError) => {
+  if (!isStringValid(value)) {
+    handleError(ValidationErrorMessage);
+  }
+};
+//   rounding
+const roundingNumber = compose(Math.round, Number);
+//   convert number
+const getResult = prop("result");
+const numberBaseQueryUrl = "https://api.tech/numbers/base";
+const numberBaseQueryParamsFrom10To2 = (number) => {
+  return { from: 10, to: 2, number };
+};
+const convertNumberBaseApi = partial(getApi, [numberBaseQueryUrl]);
+const convertNumberBaseApiFrom10To2 = compose(convertNumberBaseApi, numberBaseQueryParamsFrom10To2);
+const asyncConvertNumberBaseApiFrom10To2 = composeAsync(getResult, convertNumberBaseApiFrom10To2);
+//   get animal
+const animalQueryUrl = "https://animals.tech/";
+const animalQueryParamId = (value) => {
+  return { id: value };
+};
+const getAnimalApi = partial(getApi, [animalQueryUrl]);
+const getAnimalApiById = compose(getAnimalApi, animalQueryParamId);
+const asyncGetAnimalApiById = composeAsync(getResult, getAnimalApiById);
 
-         return wait(400);
-     }).then(() => {
-         handleSuccess('Done');
-     });
- }
+const writeLogOfValue = (obj) => {
+  getWriteLog(obj)(getValue(obj));
+};
+const validationValueProcess = (obj) => {
+  validationString(getValue(obj), gethHandleError(obj));
+};
+const roundingValueProcess = (obj) => {
+  return { ...obj, value: compose(roundingNumber, getValue)(obj) };
+};
+const convertValueToBinaryProcess = async (obj) => {
+  return { ...obj, value: await asyncConvertNumberBaseApiFrom10To2(getValue(obj)) };
+};
+const getLengthByValueProcess = (obj) => {
+  return { ...obj, value: length(getValue(obj)) };
+};
+const getSquareByValueProcess = (obj) => {
+  return { ...obj, value: squareNumber(getValue(obj)) };
+};
+const getRemainderDividedByThreeByValueProcess = (obj) => {
+  return { ...obj, value: remainderDividedByThree(getValue(obj)) };
+};
+const getAnimalByValueProcess = async (obj) => {
+  return { ...obj, value: await asyncGetAnimalApiById(getValue(obj)) };
+};
+const handleSuccessOfValue = (obj) => {
+  getHandleSuccess(obj)(getValue(obj));
+};
+const processSequence = composeAsync(
+  tap(handleSuccessOfValue),
+  getAnimalByValueProcess,
+  tap(writeLogOfValue),
+  getRemainderDividedByThreeByValueProcess,
+  tap(writeLogOfValue),
+  getSquareByValueProcess,
+  tap(writeLogOfValue),
+  getLengthByValueProcess,
+  tap(writeLogOfValue),
+  convertValueToBinaryProcess,
+  tap(writeLogOfValue),
+  roundingValueProcess,
+  tap(validationValueProcess),
+  tap(writeLogOfValue)
+);
 
 export default processSequence;
